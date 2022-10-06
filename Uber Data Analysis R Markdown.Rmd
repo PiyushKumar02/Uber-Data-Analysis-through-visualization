@@ -1,0 +1,174 @@
+---
+title: "Uber Data Analysis"
+author: "Piyush Kumar"
+date: "2022-02-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Uber Data Analysis (using different plots and geographical plotting)
+
+## Attaching Necessary Libraries
+```{r}
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(DT)
+library(scales)
+library(sf)
+library(mapview)
+```
+
+
+## Importing Data Files (.csv extension) and preparing data for analysis 
+```{r}
+apr <- read.csv("uber-raw-data-apr14.csv")
+may <- read.csv("uber-raw-data-may14.csv")
+june <- read.csv("uber-raw-data-jun14.csv")
+july <- read.csv("uber-raw-data-jul14.csv")
+aug <- read.csv("uber-raw-data-aug14.csv")
+sept <- read.csv("uber-raw-data-sep14.csv")
+
+uber.data= rbind(apr,may,june,july,aug,sept)
+
+glimpse(uber.data)
+
+head(uber.data)
+```
+
+
+## Extracting data for different time instances
+```{r}
+uber.data$Date.Time= as.POSIXct(uber.data$Date.Time,format="%m/%d/%Y %H:%M:%S") 
+uber.data$Time= format(uber.data$Date.Time, format = "%H:%M:%S")
+
+uber.data$year= factor(year(uber.data$Date.Time))
+uber.data$month= factor(month(uber.data$Date.Time, label=TRUE))
+uber.data$dayofweek= factor(wday(uber.data$Date.Time,label=TRUE))
+uber.data$day= factor(day(uber.data$Date.Time))
+uber.data$hour= factor(hour(hms(uber.data$Time)))
+uber.data$minute= factor(minute(hms(uber.data$Time)))
+uber.data$second= factor(second(hms(uber.data$Time)))
+
+head(uber.data)
+
+hourly_data= uber.data %>% group_by(hour) %>% dplyr::summarise(Total=n())
+datatable(hourly_data)
+```
+
+## Plot of trips every hour (Aggregate of all months)
+```{r}
+hourly_data= uber.data %>% group_by(hour) %>% dplyr::summarise(Total=n())
+datatable(hourly_data)
+
+ggplot(hourly_data , aes(hour,Total)) + 
+  geom_bar(stat="identity", fill="Cyan", color="Red") + 
+  ggtitle("TRIPS EVERY HOUR",subtitle="Aggregated Today") +
+  theme(plot.title= element_text(hjust= 0.5),plot.subtitle= element_text(hjust=0.5)) +
+  scale_y_continuous(labels=comma)
+```
+Here, it is evident from the plotted graph that most of the rides are booked at later time of the day and the intensity of booking increases as day ends.
+
+
+## Stacked barplot of trips every hour with stacks as months
+```{r}
+month_hour_data= uber.data %>% group_by(month,hour) %>% dplyr::summarise(Total=n())
+datatable(month_hour_data)
+
+ggplot(month_hour_data,aes(hour,Total, fill=month)) +
+  geom_col() +
+  ggtitle("TRIPS BY HOUR AND MONTH") +
+  scale_y_continuous(labels=comma)
+```
+
+The above plotted stacked bar shows how no. of rides are distributed throughout the day (done earlier  separately),stacked to different months. It somewhat seems that september month has highest amount of rides.
+
+
+## Plot to show rides every day (Aggregate of all months)
+```{r}
+day_data <- uber.data %>% group_by(day) %>% dplyr::summarize(Trips = n())
+day_data
+
+ggplot(day_data, aes(day, Trips)) + 
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ggtitle("Trips by day of the month") + 
+  scale_y_continuous(labels = comma)
+```
+The above graph shows total no. of rides each day in all the months summed up. Except 31st, all the days have no. of rides above 1 lakh (it is also because not every month is 30 days long, so it makes less sense to compare it with other days)
+
+
+## Clustered barplot to better visualize rides each weekday for each of the six months
+```{r}
+day_month_data <- uber.data %>% group_by(dayofweek, month) %>% dplyr::summarize(Trips = n())
+day_month_data
+
+ggplot(day_month_data, aes(dayofweek, Trips, fill = month)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  ggtitle("Trias by Day and Month") + 
+  scale_y_continuous(labels = comma) + 
+  scale_fill_manual(values = rainbow(7))
+```
+This clustered bar plot shows how rides are distributed in a week for each of the six months we have. One can observe that most of the rides are somewhere to the middle of the week.
+
+
+## Simple barplot for total rides in each months
+```{r}
+
+month_data = uber.data %>% group_by(month)  %>% dplyr::summarise(Total=n()) 
+month_data
+
+ggplot(month_data, aes(month, Total, fill=month)) +
+  geom_col() +
+  theme(legend.position = "none") + 
+  scale_y_continuous(labels = comma) + 
+  scale_fill_manual(values = rainbow(7))
+```
+As observed from the previous plots, the above plot validates our expectation that September has the highest no. of rides among all the six months that we have.Also, April is the month that records the lowest no. of rides amongst all the months.
+
+
+### A better way to visualize things is through heatmaps (especially in case we have two variables). So, let's plot some heatmaps and draw conclusions from it
+
+
+## Heat map of total rides (Day-Hour)
+```{r}
+day_hour_data <- uber.data %>% group_by(day,hour) %>% dplyr::summarise(Total=n())
+datatable(day_hour_data)
+
+ggplot(day_hour_data, aes(day, hour, fill = Total)) + 
+  geom_tile(colour="white") + 
+  ggtitle("Heat Map by Hour and Day")
+```
+The above heat map gives a two way spread of rides. One can easily visualize the distribution of rides both day-wise and hour-wise in a single plot. 
+
+
+##  Heat map of total rides (Day-Month)
+```{r}
+month_day_data <- uber.data %>% group_by(month, day) %>% dplyr::summarize(Trips = n())
+month_day_data
+
+ggplot(month_day_data, aes(day, month, fill = Trips)) + 
+  geom_tile(color = "white") + 
+  ggtitle("Heat Map by Month and Day")
+```
+From the above heatmap, we can observe the lighter shades on the upper side of the plot, which shows that September month has greater no. of rides (with each day in lighter shade, i.e. higher no. of rides). Also, one can observe some darkest shades of color in May and July month, which represents relatively very low no. of rides.
+
+## Heat map of total rides (Weekday-Month)
+```{r}
+ggplot(day_month_data, aes(dayofweek, month, fill = Trips)) + 
+  geom_tile(color = "white") + 
+  ggtitle("Heat Map by Month and Day")
+```
+In almost every month, one can see that Sunday is the weekday having the least no. of rides, while the mid-weeks has relatively larger no. of rides.
+
+Now, in the data, we also have latitude and longitude of each ride booked. Let's plot it on the map of the NYC to visualize the spatial distribution of the rides.
+
+```
+locations_sf <- st_as_sf(uber.data, coords = c("Lon", "Lat"), crs = 4326)
+mapview(locations_sf)
+```
+
+
